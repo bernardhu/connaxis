@@ -1,0 +1,20 @@
+{
+    "options": {
+        "failByDrop": false
+    },
+    "outdir": "./reports/servers",
+    "servers": [
+        {
+            "agent": "connaxis",
+            "url": "ws://127.0.0.1:30000",
+            "options": {
+                "version": 18
+            }
+        }
+    ],
+    "cases": [
+        "*"
+    ],
+    "exclude-cases": [],
+    "exclude-agent-cases": {}
+}

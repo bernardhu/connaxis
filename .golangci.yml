@@ -1,0 +1,77 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+linters:
+  disable-all: true
+  enable:
+    # Core correctness / bug risk
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unconvert
+    - wastedassign
+    - copyloopvar
+    - durationcheck
+    - gocheckcompilerdirectives
+    - nilerr
+    - bodyclose
+    - misspell
+    - nolintlint
+    # Security (tuned to avoid common false positives in this repo)
+    - gosec
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+
+  misspell:
+    locale: US
+
+  gosec:
+    # math/rand is used in non-crypto contexts in this codebase (e.g. load balancing / tests / examples)
+    excludes:
+      - G404
+      # Very noisy in low-level networking code; enable later after adding explicit bounds checks.
+      - G115
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # This file mirrors crypto/tls internals via go:linkname. Some fields are intentionally
+    # present for layout compatibility and appear unused to static analyzers.
+    - path: internal/tls/tls13_suites\.go
+      linters:
+        - staticcheck
+      text: "U1000"
+
+    # Empty branches are often intentional placeholders in this codebase.
+    - linters:
+        - staticcheck
+      text: "SA9003"
+
+    # Example/benchmark clients often intentionally use insecure TLS settings.
+    - path: (benchmark|examples)/.*\.go
+      linters:
+        - gosec
+
+    # WebSocket handshake uses SHA-1 per RFC 6455 (Sec-WebSocket-Accept).
+    - path: websocket/handshake\.go
+      linters:
+        - gosec
+      text: "G401|G505"
+
+    # Tests intentionally use insecure TLS / file permissions for fixtures in some cases.
+    - path: .*_test\.go
+      linters:
+        - gosec
+
+# Notes:
+# 1) For Linux-only paths (e.g. kTLS), run lint in Linux mode:
+#    GOOS=linux GOARCH=amd64 golangci-lint run ./...
+# 2) Once the baseline is clean, consider enabling revive / gocritic in a second pass.

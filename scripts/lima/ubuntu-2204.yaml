@@ -1,0 +1,17 @@
+vmType: "vz"
+arch: "aarch64"
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+mountType: "virtiofs"
+containerd:
+  system: false
+  user: false
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates kmod openssl
+      modprobe tls || true

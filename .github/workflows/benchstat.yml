@@ -1,0 +1,70 @@
+name: Benchstat
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: 'Baseline git ref (branch, tag, or SHA)'
+        required: true
+        default: 'main'
+      package:
+        description: 'Go package to benchmark'
+        required: true
+        default: './websocket'
+      bench_regex:
+        description: 'Benchmark regex'
+        required: true
+        default: '.'
+      count:
+        description: 'Benchmark repetition count'
+        required: true
+        default: '5'
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    env:
+      GOOS: linux
+      GOARCH: amd64
+    steps:
+      - name: Checkout target (current ref)
+        uses: actions/checkout@v4
+        with:
+          path: target
+
+      - name: Checkout baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.baseline_ref }}
+          path: baseline
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+
+      - name: Install benchstat
+        run: GOPROXY=https://proxy.golang.org,direct go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Run target benchmarks
+        working-directory: target
+        run: |
+          go test -run '^$' -bench "${{ inputs.bench_regex }}" -benchmem -count "${{ inputs.count }}" "${{ inputs.package }}" | tee ../target.bench
+
+      - name: Run baseline benchmarks
+        working-directory: baseline
+        run: |
+          go test -run '^$' -bench "${{ inputs.bench_regex }}" -benchmem -count "${{ inputs.count }}" "${{ inputs.package }}" | tee ../baseline.bench
+
+      - name: Compare with benchstat
+        run: |
+          "$(go env GOPATH)/bin/benchstat" baseline.bench target.bench | tee benchstat.txt
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchstat-${{ github.run_id }}
+          path: |
+            baseline.bench
+            target.bench
+            benchstat.txt

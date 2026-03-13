@@ -1,0 +1,17 @@
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+
+# Bench outputs
+benchmark/**/reports/
+benchmark/compare/results/
+benchmark/**/bin/
+
+# Local caches (if present)
+.gocache/
+.gomodcache/
+
+# Go build artifacts
+**/*.test
+**/*.out
