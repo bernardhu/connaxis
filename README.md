@@ -17,6 +17,8 @@ Compared with projects that mainly optimize plain TCP event-loop throughput, `co
 - built-in TLS support with kTLS integration path
 - reproducible compatibility validation workflows
 
+Compared with projects such as `evio`, `gnet`, and `netpoll`, `connaxis` puts more emphasis on `TLS/kTLS`, `WS/WSS`, and reproducible validation workflows than on plain TCP event-loop throughput alone.
+
 This project is not positioned as a replacement for OpenSSL, and it does not claim full parity with OpenSSL on all TLS edge-case behaviors.
 
 See:

@@ -17,6 +17,8 @@
 - 内置 TLS，并提供 kTLS 集成路径
 - 可复现的兼容性验证流程
 
+与 `evio`、`gnet`、`netpoll` 这类项目相比，`connaxis` 更强调 `TLS/kTLS`、`WS/WSS` 和可复现的验证工作流，而不只是纯 TCP event-loop 吞吐。
+
 本项目不定位为 OpenSSL 的替代品，也不宣称在所有 TLS 边界行为上与 OpenSSL 完全等价。
 
 参见：
