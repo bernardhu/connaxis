@@ -3,15 +3,15 @@
 ![Go](https://github.com/bernardhu/connaxis/workflows/Go/badge.svg)
 [![LICENSE](https://img.shields.io/badge/LICENSE-MIT-blue)](/LICENSE)
 
-`connaxis` is a lightweight event-driven networking framework for Go. It uses direct [epoll](https://en.wikipedia.org/wiki/Epoll) / [kqueue](https://en.wikipedia.org/wiki/Kqueue) syscalls instead of the standard Go [net](https://golang.org/pkg/net/) server path, and follows a model similar to [libuv](https://github.com/libuv/libuv) and [libevent](https://github.com/libevent/libevent).
+`connaxis` is a Linux-first event-driven networking framework for Go with integrated `TLS/kTLS`, `WebSocket/WSS`, long-lived connection support, and reproducible protocol validation workflows. It uses direct [epoll](https://en.wikipedia.org/wiki/Epoll) / [kqueue](https://en.wikipedia.org/wiki/Kqueue) syscalls instead of the standard Go [net](https://golang.org/pkg/net/) server path, and follows a model similar to [libuv](https://github.com/libuv/libuv) and [libevent](https://github.com/libevent/libevent).
 
-The project targets high-connection-count packet-processing workloads, such as gateways, proxies, and long-lived connection services.
+The project targets high-connection-count workloads such as gateways, proxies, and long-lived connection services. It is primarily built and validated for Linux; on macOS and BSD, the goal is basic end-to-end path validation rather than feature parity with Linux.
 
 ## Positioning
 
-`connaxis` is positioned as a Go event-driven networking framework for gateway/proxy and long-lived connection scenarios, with integrated `TLS/kTLS` and `WS/WSS` support.
+`connaxis` is positioned as a Linux-first Go networking runtime for gateway/proxy and long-lived connection scenarios, with integrated `TLS/kTLS` and `WS/WSS` support.
 
-Compared with projects that mainly optimize plain TCP event-loop throughput, `connaxis` focuses on protocol integration:
+Compared with projects that mainly optimize plain TCP event-loop throughput, `connaxis` focuses on protocol integration and validation:
 
 - event-driven core for TCP/HTTP/WebSocket workloads
 - built-in TLS support with kTLS integration path

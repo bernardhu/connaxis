@@ -3,15 +3,15 @@
 ![Go](https://github.com/bernardhu/connaxis/workflows/Go/badge.svg)
 [![LICENSE](https://img.shields.io/badge/LICENSE-MIT-blue)](/LICENSE)
 
-`connaxis` 是一个面向 Go 的轻量事件驱动网络框架。它直接使用 [epoll](https://en.wikipedia.org/wiki/Epoll) / [kqueue](https://en.wikipedia.org/wiki/Kqueue) 系统调用，而不是标准 Go [net](https://golang.org/pkg/net/) server 路径，整体模型接近 [libuv](https://github.com/libuv/libuv) 和 [libevent](https://github.com/libevent/libevent)。
+`connaxis` 是一个面向 Go 的 Linux-first 事件驱动网络框架，集成了 `TLS/kTLS`、`WebSocket/WSS`、长连接场景支持，以及可复现的协议验证工作流。它直接使用 [epoll](https://en.wikipedia.org/wiki/Epoll) / [kqueue](https://en.wikipedia.org/wiki/Kqueue) 系统调用，而不是标准 Go [net](https://golang.org/pkg/net/) server 路径，整体模型接近 [libuv](https://github.com/libuv/libuv) 和 [libevent](https://github.com/libevent/libevent)。
 
-项目面向高连接数、长连接、包处理类场景，例如网关、代理和长期在线服务。
+项目面向高连接数场景，例如网关、代理和长期在线服务。它的主要构建和验证平台是 Linux；对于 macOS 和 BSD，目标是保证基础链路可跑通，而不是追求与 Linux 同等级的特性覆盖。
 
 ## 定位
 
-`connaxis` 的定位是一个面向网关/代理和长连接场景的 Go 事件驱动网络框架，内置 `TLS/kTLS` 与 `WS/WSS` 支持。
+`connaxis` 的定位是一个面向网关/代理和长连接场景的 Linux-first Go 网络运行时，内置 `TLS/kTLS` 与 `WS/WSS` 支持。
 
-相比主要优化纯 TCP event-loop 吞吐的项目，`connaxis` 更强调协议集成：
+相比主要优化纯 TCP event-loop 吞吐的项目，`connaxis` 更强调协议集成和验证：
 
 - 面向 TCP/HTTP/WebSocket 的事件驱动核心
 - 内置 TLS，并提供 kTLS 集成路径
