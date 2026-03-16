@@ -109,10 +109,10 @@ func headerTooLarge(in []byte) (bool, int) {
 }
 
 func httpErrorResponse(code int) []byte {
-	text := StatusText(code)
+	text := http.StatusText(code)
 	if text == "" {
 		code = http.StatusBadRequest
-		text = StatusText(code)
+		text = http.StatusText(code)
 	}
 	body := text + "\n"
 	return []byte(

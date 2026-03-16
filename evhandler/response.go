@@ -56,7 +56,7 @@ func (r *ResponseWriter) Write(buf []byte) (int, error) {
 
 func (r *ResponseWriter) Bytes() []byte {
 	r.buf.Reset()
-	status := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.code, statusText[r.code])
+	status := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.code, http.StatusText(r.code))
 	r.buf.WriteString(status)
 
 	if r.header.Get("Content-Length") == "" {
