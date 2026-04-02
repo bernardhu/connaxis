@@ -14,6 +14,7 @@ type ResponseWriter struct {
 	code        int
 	header      http.Header
 	wroteHeader bool
+	deferred    bool
 }
 
 func (r *ResponseWriter) Init() {
@@ -33,6 +34,7 @@ func (r *ResponseWriter) Reset() {
 	r.buf.Reset()
 	r.body.Reset()
 	r.wroteHeader = false
+	r.deferred = false
 }
 
 func (r *ResponseWriter) Header() http.Header {
@@ -52,6 +54,14 @@ func (r *ResponseWriter) Write(buf []byte) (int, error) {
 		r.WriteHeader(r.code)
 	}
 	return r.body.Write(buf)
+}
+
+func (r *ResponseWriter) Defer() {
+	r.deferred = true
+}
+
+func (r *ResponseWriter) Deferred() bool {
+	return r.deferred
 }
 
 func (r *ResponseWriter) Bytes() []byte {

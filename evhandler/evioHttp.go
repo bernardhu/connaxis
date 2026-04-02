@@ -140,6 +140,9 @@ func (d *httpHandlerDispatcher) serve(job *httpJob) {
 	}()
 
 	d.handler.ServeHTTP(w, job.req)
+	if w.Deferred() {
+		return
+	}
 	if err := job.conn.AddCmd(connection.CMD_DATA, w.Bytes()); err != nil {
 		wrapper.Increment("qps.connaxis.http.reject.addcmd_error")
 	}
