@@ -219,6 +219,58 @@ func TestConnaxisTLSEcho(t *testing.T) {
 	}
 }
 
+func TestConnaxisTLSSessionResumptionAcrossReusePortListeners(t *testing.T) {
+	requireTCPListen(t)
+	certPath, keyPath := writeSelfSignedCertFiles(t)
+
+	cfg := connaxis.GetDefaultConfig()
+	cfg.Ncpu = 4
+	cfg.SslMode = "tls"
+	cfg.SslPem = certPath
+	cfg.SslKey = keyPath
+	cfg.ListenAddrs = []eventloop.IEVEndpoint{
+		&connaxis.EVEndpoint{Net: "tcp", Address: reserveTCPListenAddr(t)},
+	}
+
+	h := &tlsEchoHandler{
+		connected: make(chan struct{}, 16),
+		gotData:   make(chan []byte, 16),
+	}
+	err, srv := connaxis.ServeByConfig(h, cfg, false)
+	if err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	defer srv.Stop()
+
+	addr := srv.GetListenAddrs()[0].String()
+	clientCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         "localhost",
+		MinVersion:         tls.VersionTLS12,
+		MaxVersion:         tls.VersionTLS12,
+		ClientSessionCache: tls.NewLRUClientSessionCache(16),
+	}
+
+	for i := 0; i < 6; i++ {
+		conn, err := tls.Dial("tcp", addr, clientCfg)
+		if err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+		didResume := conn.ConnectionState().DidResume
+		_ = conn.Close()
+
+		if i == 0 {
+			if didResume {
+				t.Fatalf("first dial unexpectedly resumed")
+			}
+			continue
+		}
+		if !didResume {
+			t.Fatalf("dial %d did not resume TLS session", i)
+		}
+	}
+}
+
 type wsUserEchoHandler struct{}
 
 func (h *wsUserEchoHandler) OnUserData(ctx *WsCtx) []byte {

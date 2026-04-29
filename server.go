@@ -15,6 +15,7 @@ import (
 
 	"github.com/bernardhu/connaxis/connection"
 	"github.com/bernardhu/connaxis/eventloop"
+	"github.com/bernardhu/connaxis/internal/tls"
 	"github.com/bernardhu/connaxis/tuning"
 	"github.com/bernardhu/connaxis/wrapper"
 )
@@ -130,6 +131,7 @@ func (s *Server) start() error {
 	if cfg == nil {
 		return errors.New("nil config")
 	}
+	var tlsConfig *tls.Config
 	// create loops locally.
 	eventloop.InitFDTable()
 	for i := 0; i < s.workerNum; i++ {
@@ -147,6 +149,11 @@ func (s *Server) start() error {
 	}
 
 	if strings.ToLower(strings.TrimSpace(cfg.SslMode)) == "tls" {
+		var err error
+		tlsConfig, err = buildTLSConfig(cfg)
+		if err != nil {
+			return err
+		}
 		s.tlsWorker = eventloop.NewTLSHandshakeWorker(tuning.TlsHandshakeWorkers, s.loops)
 		s.tlsWorker.Start()
 		for _, loop := range s.loops {
@@ -158,7 +165,7 @@ func (s *Server) start() error {
 	// bind listeners to every loop (SO_REUSEPORT sockets per loop).
 	for _, lp := range s.loops {
 		for _, ep := range cfg.ListenAddrs {
-			ln, err := openListener(ep, cfg)
+			ln, err := openListener(ep, cfg, tlsConfig)
 			if err != nil {
 				if s.tlsWorker != nil {
 					s.tlsWorker.Stop()
