@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,7 +28,8 @@ const (
 type tlsBufferConn struct {
 	// direct is only used during the handshake, when crypto/tls expects blocking I/O.
 	// After the handshake, direct is nil and crypto/tls reads from cin and writes to cout.
-	direct net.Conn
+	directMu sync.Mutex
+	direct   net.Conn
 
 	cin  *ringbuffer.RingBuffer
 	cout *ringbuffer.RingBuffer
@@ -51,12 +53,33 @@ func (*wouldBlockError) Temporary() bool { return true }
 
 var errWouldBlock = &wouldBlockError{}
 
+func (b *tlsBufferConn) setDirect(conn net.Conn) {
+	b.directMu.Lock()
+	b.direct = conn
+	b.directMu.Unlock()
+}
+
+func (b *tlsBufferConn) getDirect() net.Conn {
+	b.directMu.Lock()
+	direct := b.direct
+	b.directMu.Unlock()
+	return direct
+}
+
+func (b *tlsBufferConn) clearDirect() net.Conn {
+	b.directMu.Lock()
+	direct := b.direct
+	b.direct = nil
+	b.directMu.Unlock()
+	return direct
+}
+
 func (b *tlsBufferConn) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if b.direct != nil {
-		return b.direct.Read(p)
+	if direct := b.getDirect(); direct != nil {
+		return direct.Read(p)
 	}
 	if b.cin.Has() == 0 {
 		return 0, errWouldBlock
@@ -73,8 +96,8 @@ func (b *tlsBufferConn) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if b.direct != nil {
-		return b.direct.Write(p)
+	if direct := b.getDirect(); direct != nil {
+		return direct.Write(p)
 	}
 	data := p
 	if b.cout.Write(&data, len(data), true) < 0 {
@@ -84,47 +107,43 @@ func (b *tlsBufferConn) Write(p []byte) (int, error) {
 }
 
 func (b *tlsBufferConn) Close() error {
-	if b.direct != nil {
-		// During HandshakeContext timeout crypto/tls may call Close while another
-		// goroutine is blocked in Read. Keep direct stable until the handshake
-		// owner clears it after HandshakeContext returns; otherwise the interface
-		// assignment can race with Read and expose a typed nil Conn.
-		return b.direct.Close()
+	if direct := b.clearDirect(); direct != nil {
+		return direct.Close()
 	}
 	return nil
 }
 
 func (b *tlsBufferConn) LocalAddr() net.Addr {
-	if b.direct != nil {
-		return b.direct.LocalAddr()
+	if direct := b.getDirect(); direct != nil {
+		return direct.LocalAddr()
 	}
 	return b.local
 }
 
 func (b *tlsBufferConn) RemoteAddr() net.Addr {
-	if b.direct != nil {
-		return b.direct.RemoteAddr()
+	if direct := b.getDirect(); direct != nil {
+		return direct.RemoteAddr()
 	}
 	return b.remote
 }
 
 func (b *tlsBufferConn) SetDeadline(t time.Time) error {
-	if b.direct != nil {
-		return b.direct.SetDeadline(t)
+	if direct := b.getDirect(); direct != nil {
+		return direct.SetDeadline(t)
 	}
 	return nil
 }
 
 func (b *tlsBufferConn) SetReadDeadline(t time.Time) error {
-	if b.direct != nil {
-		return b.direct.SetReadDeadline(t)
+	if direct := b.getDirect(); direct != nil {
+		return direct.SetReadDeadline(t)
 	}
 	return nil
 }
 
 func (b *tlsBufferConn) SetWriteDeadline(t time.Time) error {
-	if b.direct != nil {
-		return b.direct.SetWriteDeadline(t)
+	if direct := b.getDirect(); direct != nil {
+		return direct.SetWriteDeadline(t)
 	}
 	return nil
 }
@@ -200,10 +219,10 @@ func NewPendingTLSServerConn(fd int, cfg *tls.Config, local, remote net.Addr) (*
 		}
 		c.handshakeKLW = klw
 		c.handshakeRC = internalktls.NewRecordConn(direct)
-		c.buf.direct = c.handshakeRC
+		c.buf.setDirect(c.handshakeRC)
 		c.Conn = tls.Server(c.buf, ktlsCfg)
 	default:
-		c.buf.direct = direct
+		c.buf.setDirect(direct)
 		c.Conn = tls.Server(c.buf, cfg)
 	}
 
@@ -244,7 +263,7 @@ func NewATLSConnServer(ctx context.Context, fd int, cfg *tls.Config) (*ATLSConn,
 	} else {
 		hc = strictConn
 	}
-	buf.direct = hc
+	buf.setDirect(hc)
 	buf.local = hc.LocalAddr()
 	buf.remote = hc.RemoteAddr()
 
@@ -264,7 +283,7 @@ func NewATLSConnServer(ctx context.Context, fd int, cfg *tls.Config) (*ATLSConn,
 	recordCipherSuite(tc.ConnectionState())
 
 	_ = hc.Close()
-	buf.direct = nil
+	buf.clearDirect()
 
 	c := &ATLSConn{
 		Conn: tc,
@@ -285,7 +304,7 @@ func NewATLSConnClient(ctx context.Context, fd int, cfg *tls.Config) (*ATLSConn,
 	if err != nil {
 		return nil, err
 	}
-	buf.direct = hc
+	buf.setDirect(hc)
 	buf.local = hc.LocalAddr()
 	buf.remote = hc.RemoteAddr()
 
@@ -305,7 +324,7 @@ func NewATLSConnClient(ctx context.Context, fd int, cfg *tls.Config) (*ATLSConn,
 	recordCipherSuite(tc.ConnectionState())
 
 	_ = hc.Close()
-	buf.direct = nil
+	buf.clearDirect()
 
 	c := &ATLSConn{
 		Conn: tc,
@@ -345,7 +364,7 @@ func (c *ATLSConn) CompleteServerHandshake() error {
 	if c == nil {
 		return errors.New("nil tls conn")
 	}
-	if c.Conn == nil || c.buf == nil || c.buf.direct == nil {
+	if c.Conn == nil || c.buf == nil || c.buf.getDirect() == nil {
 		return errors.New("tls conn not initialized")
 	}
 	if err := unix.SetNonblock(c.fd, false); err != nil {
@@ -373,7 +392,7 @@ func (c *ATLSConn) CompleteServerHandshake() error {
 		}
 	}
 
-	c.buf.direct = nil
+	c.buf.clearDirect()
 	c.handshakeRC = nil
 	c.handshakeKLW = nil
 	return nil

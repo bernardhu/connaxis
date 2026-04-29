@@ -233,7 +233,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 	}
 
 	rc := internalktls.NewRecordConn(hc)
-	buf.direct = rc
+	buf.setDirect(rc)
 	buf.local = hc.LocalAddr()
 	buf.remote = hc.RemoteAddr()
 
@@ -262,7 +262,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 	recordCipherSuite(state)
 	if !internalktls.IsKTLSCipher(state.CipherSuite) {
 		_ = hc.Close()
-		buf.direct = nil
+		buf.clearDirect()
 		wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=unsupported cipher=0x%x", fd, isClient, state.CipherSuite)
 		return newStdTLSFallback(fd, buf, tc, nil, errors.New("ktls unsupported cipher"))
 	}
@@ -276,7 +276,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		serverRandom := rc.ServerRandom()
 		if len(clientRandom) != 32 || len(serverRandom) != 32 {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=hello random invalid client=%d server=%d", fd, isClient, len(clientRandom), len(serverRandom))
 			return newStdTLSFallback(fd, buf, tc, preRead, errors.New("failed to capture hello randoms"))
 		}
@@ -284,7 +284,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		_, masterSecret, ok := klw.Secrets()
 		if !ok || len(masterSecret) == 0 {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=master secret missing", fd, isClient)
 			return newStdTLSFallback(fd, buf, tc, preRead, errors.New("failed to capture master secret"))
 		}
@@ -292,21 +292,21 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		keys, err := internalktls.DeriveTLS12Keys(masterSecret, clientRandom, serverRandom, state.CipherSuite)
 		if err != nil {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=derive tls12 keys err=%v", fd, isClient, err)
 			return newStdTLSFallback(fd, buf, tc, preRead, err)
 		}
 
 		if err := internalktls.EnableKTLS(fd, isClient, state.CipherSuite, keys, rc.InSeq(), rc.OutSeq()); err != nil {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=enable ktls12 err=%v", fd, isClient, err)
 			return newStdTLSFallback(fd, buf, tc, preRead, err)
 		}
 		wrapper.Debugf("newKTLSConn ktls12 enabled fd=%d isClient=%v inSeq=%x outSeq=%x preRead=%d", fd, isClient, rc.InSeq(), rc.OutSeq(), len(preRead))
 		if !internalktls.KTLSEnableRX {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			c := &ATLSConn{
 				Conn:       tc,
 				buf:        buf,
@@ -325,7 +325,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 	case tls.VersionTLS13:
 		if !kernelSupportsKTLS13() {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			reason := "ktls tls1.3 requires linux kernel >= 5.15"
 			if ktlsTLS13KernelRelease != "" {
 				reason = reason + ", current=" + ktlsTLS13KernelRelease
@@ -344,7 +344,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		clientSecret, serverSecret, ok := klw.TrafficSecrets()
 		if !ok {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=traffic secret missing", fd, isClient)
 			return newStdTLSFallback(fd, buf, tc, preRead, errors.New("failed to capture traffic secrets"))
 		}
@@ -352,7 +352,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		keys, err := internalktls.DeriveTLS13Keys(clientSecret, serverSecret, state.CipherSuite)
 		if err != nil {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=derive tls13 keys err=%v", fd, isClient, err)
 			return newStdTLSFallback(fd, buf, tc, preRead, err)
 		}
@@ -360,20 +360,20 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		inSeq, outSeq, ok := internalktls.TLSConnRecSeq(tc)
 		if !ok {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			return newStdTLSFallback(fd, buf, tc, preRead, errors.New("failed to read tls record seq"))
 		}
 
 		if err := internalktls.EnableKTLS13(fd, isClient, state.CipherSuite, keys, inSeq, outSeq); err != nil {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=enable ktls13 err=%v", fd, isClient, err)
 			return newStdTLSFallback(fd, buf, tc, preRead, err)
 		}
 		wrapper.Debugf("newKTLSConn ktls13 enabled fd=%d isClient=%v inSeq=%x outSeq=%x preRead=%d", fd, isClient, inSeq, outSeq, len(preRead))
 		if !internalktls.KTLSEnableRX {
 			_ = hc.Close()
-			buf.direct = nil
+			buf.clearDirect()
 			c := &ATLSConn{
 				Conn:       tc,
 				buf:        buf,
@@ -391,7 +391,7 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		}
 
 		_ = hc.Close()
-		buf.direct = nil
+		buf.clearDirect()
 		c := &ATLSConn{
 			Conn:       nil,
 			buf:        nil,
@@ -408,13 +408,13 @@ func newKTLSConn(ctx context.Context, fd int, cfg *tls.Config, isClient bool) (*
 		return c, nil
 	default:
 		_ = hc.Close()
-		buf.direct = nil
+		buf.clearDirect()
 		wrapper.Warnf("newKTLSConn fallback fd=%d isClient=%v reason=unsupported version=0x%x", fd, isClient, state.Version)
 		return newStdTLSFallback(fd, buf, tc, preRead, errors.New("unsupported tls version"))
 	}
 
 	_ = hc.Close()
-	buf.direct = nil
+	buf.clearDirect()
 	c := &ATLSConn{
 		Conn:       nil,
 		buf:        nil,
