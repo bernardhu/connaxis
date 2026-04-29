@@ -13,6 +13,8 @@
   "sslMode": "",
   "tlsEngine": "atls",
   "ktlsPolicy": "tls12-tx",
+  "tlsSessionTicketSeed": "",
+  "tlsSessionTicketContext": "",
   "bufSize": 1048576,
   "chanSize": 8192,
   "pktSizeLimit": 67108864,
@@ -39,6 +41,8 @@
   - `tls13-tx`: force TLS1.3 and enable kTLS TX only.
   - `tls12-rxtx`: force TLS1.2 and enable kTLS RX/TX.
   - `tls13-rxtx`: force TLS1.3 and enable kTLS RX/TX.
+- `tlsSessionTicketSeed`: optional shared string seed for deterministic TLS session ticket keys across nodes.
+- `tlsSessionTicketContext`: optional context string mixed into session ticket key derivation to isolate environments/hosts.
 - `listenAddrs`: array of endpoint strings in form `tcp://:5000?reuseport=false`.
 - `bufSize`: shared read buffer size per loop.
 - `chanSize`: loop channel size.
@@ -53,3 +57,4 @@
 ## Notes
 
 - `listenAddrs` is parsed into internal endpoints. If you customize loading, ensure entries are converted into `EVEndpoint` values.
+- If `tlsSessionTicketSeed` is set and `tlsSessionTicketsDisabled` is false, connaxis derives a shared key ring in order `K_n, K_{n+1}, K_{n-1} ... K_{n-7}` and rotates it locally every 86400 seconds based on wall clock time. All nodes serving the same hostname should use the same `tlsSessionTicketSeed` and `tlsSessionTicketContext`.

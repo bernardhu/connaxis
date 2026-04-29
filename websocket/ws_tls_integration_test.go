@@ -271,6 +271,68 @@ func TestConnaxisTLSSessionResumptionAcrossReusePortListeners(t *testing.T) {
 	}
 }
 
+func TestConnaxisTLSSessionResumptionAcrossIndependentServersWithSharedSeed(t *testing.T) {
+	requireTCPListen(t)
+	certPath, keyPath := writeSelfSignedCertFiles(t)
+
+	newTLSConfig := func(addr string) *connaxis.EvConfig {
+		cfg := connaxis.GetDefaultConfig()
+		cfg.Ncpu = 1
+		cfg.SslMode = "tls"
+		cfg.SslPem = certPath
+		cfg.SslKey = keyPath
+		cfg.TlsMinVersion = tls.VersionTLS12
+		cfg.TlsMaxVersion = tls.VersionTLS12
+		cfg.TlsSessionTicketSeed = "cluster-shared-ticket-seed"
+		cfg.TlsSessionTicketContext = "ws-tls-integration"
+		cfg.ListenAddrs = []eventloop.IEVEndpoint{
+			&connaxis.EVEndpoint{Net: "tcp", Address: addr},
+		}
+		return cfg
+	}
+
+	h1 := &tlsEchoHandler{connected: make(chan struct{}, 8), gotData: make(chan []byte, 8)}
+	err, srv1 := connaxis.ServeByConfig(h1, newTLSConfig(reserveTCPListenAddr(t)), false)
+	if err != nil {
+		t.Fatalf("serve server1: %v", err)
+	}
+	defer srv1.Stop()
+
+	h2 := &tlsEchoHandler{connected: make(chan struct{}, 8), gotData: make(chan []byte, 8)}
+	err, srv2 := connaxis.ServeByConfig(h2, newTLSConfig(reserveTCPListenAddr(t)), false)
+	if err != nil {
+		t.Fatalf("serve server2: %v", err)
+	}
+	defer srv2.Stop()
+
+	clientCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         "localhost",
+		MinVersion:         tls.VersionTLS12,
+		MaxVersion:         tls.VersionTLS12,
+		ClientSessionCache: tls.NewLRUClientSessionCache(16),
+	}
+
+	conn, err := tls.Dial("tcp", srv1.GetListenAddrs()[0].String(), clientCfg)
+	if err != nil {
+		t.Fatalf("dial server1: %v", err)
+	}
+	if conn.ConnectionState().DidResume {
+		_ = conn.Close()
+		t.Fatalf("first dial unexpectedly resumed")
+	}
+	_ = conn.Close()
+
+	conn, err = tls.Dial("tcp", srv2.GetListenAddrs()[0].String(), clientCfg)
+	if err != nil {
+		t.Fatalf("dial server2: %v", err)
+	}
+	defer conn.Close()
+	if !conn.ConnectionState().DidResume {
+		t.Fatalf("second dial did not resume TLS session across independent servers")
+	}
+}
+
 type wsUserEchoHandler struct{}
 
 func (h *wsUserEchoHandler) OnUserData(ctx *WsCtx) []byte {

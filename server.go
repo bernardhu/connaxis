@@ -132,6 +132,7 @@ func (s *Server) start() error {
 		return errors.New("nil config")
 	}
 	var tlsConfig *tls.Config
+	enableSessionTicketRotation := false
 	// create loops locally.
 	eventloop.InitFDTable()
 	for i := 0; i < s.workerNum; i++ {
@@ -154,6 +155,7 @@ func (s *Server) start() error {
 		if err != nil {
 			return err
 		}
+		enableSessionTicketRotation = hasManagedTLSSessionTicketKeys(cfg)
 		s.tlsWorker = eventloop.NewTLSHandshakeWorker(tuning.TlsHandshakeWorkers, s.loops)
 		s.tlsWorker.Start()
 		for _, loop := range s.loops {
@@ -175,6 +177,10 @@ func (s *Server) start() error {
 			wrapper.Debugf("input:%v net:%s, addr:%s, reuse:%t", ep, ep.Network(), ep.String(), true)
 			lp.AddListener(ln)
 		}
+	}
+
+	if enableSessionTicketRotation {
+		s.startTLSSessionTicketRotation(tlsConfig)
 	}
 
 	// run loops after all listeners are bound.
