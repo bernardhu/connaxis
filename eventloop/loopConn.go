@@ -188,8 +188,11 @@ func (l *LoopConn) Stat(now int64, print bool) {
 	accept := atomic.LoadInt32(&l.acceptCount)
 	tlsAccept := atomic.LoadInt32(&l.tlsAccept)
 	tlsPending := int32(0)
+	tlsMaxWorkers := 0
+	tlsWorkers := 0
+	tlsIdleWorkers := 0
 	if l.tlsWorker != nil {
-		tlsPending = l.tlsWorker.Pending()
+		tlsPending, tlsMaxWorkers, tlsWorkers, tlsIdleWorkers = l.tlsWorker.Stats()
 	}
 	write := atomic.LoadInt32(&l.write)
 	read := atomic.LoadInt32(&l.read)
@@ -206,6 +209,10 @@ func (l *LoopConn) Stat(now int64, print bool) {
 	wrapper.Count("qps.connaxis.accept.ntls", int64(accept))
 	wrapper.Count("qps.connaxis.accept.tls", int64(tlsAccept))
 	wrapper.Gauge("cnt.connaxis.accept.tlspending", int64(tlsPending))
+	wrapper.Gauge("cnt.connaxis.tls.handshake.pending", int64(tlsPending))
+	wrapper.Gauge("cnt.connaxis.tls.handshake.max_workers", int64(tlsMaxWorkers))
+	wrapper.Gauge("cnt.connaxis.tls.handshake.workers", int64(tlsWorkers))
+	wrapper.Gauge("cnt.connaxis.tls.handshake.idle_workers", int64(tlsIdleWorkers))
 	wrapper.Count("qps.connaxis.loop.write", int64(write))
 	wrapper.Count("qps.connaxis.loop.read", int64(read))
 	wrapper.Count("qps.connaxis.loop.recvcmd", int64(recvcmd))

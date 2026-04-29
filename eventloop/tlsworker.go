@@ -2,6 +2,7 @@ package eventloop
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +21,7 @@ type TLSHandshakeWorker struct {
 	maxWorkers int
 	minWorkers int
 
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	workers     int
 	idleWorkers int
 
@@ -95,6 +96,16 @@ func (w *TLSHandshakeWorker) Pending() int32 {
 	return atomic.LoadInt32(&w.pending)
 }
 
+func (w *TLSHandshakeWorker) Stats() (pending int32, maxWorkers, workers, idleWorkers int) {
+	pending = atomic.LoadInt32(&w.pending)
+	w.mu.RLock()
+	maxWorkers = w.maxWorkers
+	workers = w.workers
+	idleWorkers = w.idleWorkers
+	w.mu.RUnlock()
+	return pending, maxWorkers, workers, idleWorkers
+}
+
 func (w *TLSHandshakeWorker) recycleWorker() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -113,10 +124,10 @@ func (w *TLSHandshakeWorker) handleConn(c *connection.ATLSConn) {
 		cost := time.Since(begin) / time.Millisecond
 		if connection.TlsHandshakeTimeout > 0 && time.Since(c.HandshakeAt()) >= connection.TlsHandshakeTimeout {
 			wrapper.Errorf("tls handshake timeout fd:%d cost:%dms timeout:%s", c.Fd(), cost, connection.TlsHandshakeTimeout)
-			wrapper.Increment("connaxis.tls.handshake.timeout")
+			wrapper.Increment("connaxis.tls.handshake.error.timeout")
 		} else {
 			wrapper.Errorf("tls handshake err:%v fd:%d cost:%dms", err, c.Fd(), cost)
-			wrapper.Increment("connaxis.tls.handshake.error")
+			wrapper.Increment("connaxis.tls.handshake.error." + tlsHandshakeErrorReason(err))
 		}
 		_ = c.Close()
 		return
@@ -128,5 +139,28 @@ func (w *TLSHandshakeWorker) handleConn(c *connection.ATLSConn) {
 	wrapper.Increment("connaxis.tls.handshake.success")
 	if err := loop.AddClient(c); err != nil {
 		_ = c.Close()
+	}
+}
+
+func tlsHandshakeErrorReason(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "connection reset by peer"):
+		return "reset"
+	case strings.Contains(msg, "unknown certificate"):
+		return "unknown_certificate"
+	case strings.Contains(msg, "unsupported versions"):
+		return "unsupported_version"
+	case strings.Contains(msg, "bad certificate"):
+		return "bad_certificate"
+	case strings.Contains(msg, "first record does not look like a tls handshake"):
+		return "not_tls"
+	case strings.Contains(msg, "closed") || strings.Contains(msg, "use of closed network connection"):
+		return "closed"
+	default:
+		return "other"
 	}
 }
