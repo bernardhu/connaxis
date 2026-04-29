@@ -85,9 +85,11 @@ func (b *tlsBufferConn) Write(p []byte) (int, error) {
 
 func (b *tlsBufferConn) Close() error {
 	if b.direct != nil {
-		err := b.direct.Close()
-		b.direct = nil
-		return err
+		// During HandshakeContext timeout crypto/tls may call Close while another
+		// goroutine is blocked in Read. Keep direct stable until the handshake
+		// owner clears it after HandshakeContext returns; otherwise the interface
+		// assignment can race with Read and expose a typed nil Conn.
+		return b.direct.Close()
 	}
 	return nil
 }
