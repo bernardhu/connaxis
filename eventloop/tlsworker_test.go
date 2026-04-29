@@ -25,3 +25,12 @@ func TestTLSHandshakeErrorReason(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSHandshakeStateMetric(t *testing.T) {
+	if got := tlsHandshakeStateMetric(false); got != "connaxis.tls.handshake.full" {
+		t.Fatalf("tlsHandshakeStateMetric(false) = %q", got)
+	}
+	if got := tlsHandshakeStateMetric(true); got != "connaxis.tls.handshake.resumed" {
+		t.Fatalf("tlsHandshakeStateMetric(true) = %q", got)
+	}
+}

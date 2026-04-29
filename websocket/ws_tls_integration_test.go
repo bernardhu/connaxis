@@ -271,6 +271,67 @@ func TestConnaxisTLSSessionResumptionAcrossReusePortListeners(t *testing.T) {
 	}
 }
 
+func TestConnaxisTLSSessionResumptionWithSharedTicketKey(t *testing.T) {
+	requireTCPListen(t)
+	certPath, keyPath := writeSelfSignedCertFiles(t)
+	ticketKeyPath := t.TempDir() + "/ticket.keys"
+	if err := os.WriteFile(ticketKeyPath, []byte("0123456789abcdef0123456789abcdef\n"), 0600); err != nil {
+		t.Fatalf("write ticket key: %v", err)
+	}
+
+	start := func(addr string) *connaxis.Server {
+		cfg := connaxis.GetDefaultConfig()
+		cfg.Ncpu = 1
+		cfg.SslMode = "tls"
+		cfg.SslPem = certPath
+		cfg.SslKey = keyPath
+		cfg.TlsSessionTicketKeyFile = ticketKeyPath
+		cfg.ListenAddrs = []eventloop.IEVEndpoint{
+			&connaxis.EVEndpoint{Net: "tcp", Address: addr},
+		}
+		h := &tlsEchoHandler{
+			connected: make(chan struct{}, 4),
+			gotData:   make(chan []byte, 4),
+		}
+		err, srv := connaxis.ServeByConfig(h, cfg, false)
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+		return srv
+	}
+
+	clientCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         "localhost",
+		MinVersion:         tls.VersionTLS12,
+		MaxVersion:         tls.VersionTLS12,
+		ClientSessionCache: tls.NewLRUClientSessionCache(16),
+	}
+
+	first := start(reserveTCPListenAddr(t))
+	conn, err := tls.Dial("tcp", first.GetListenAddrs()[0].String(), clientCfg)
+	if err != nil {
+		t.Fatalf("first dial: %v", err)
+	}
+	if conn.ConnectionState().DidResume {
+		t.Fatal("first dial unexpectedly resumed")
+	}
+	_ = conn.Close()
+	first.Stop()
+
+	second := start(reserveTCPListenAddr(t))
+	defer second.Stop()
+	conn, err = tls.Dial("tcp", second.GetListenAddrs()[0].String(), clientCfg)
+	if err != nil {
+		t.Fatalf("second dial: %v", err)
+	}
+	didResume := conn.ConnectionState().DidResume
+	_ = conn.Close()
+	if !didResume {
+		t.Fatal("second dial did not resume with shared ticket key")
+	}
+}
+
 type wsUserEchoHandler struct{}
 
 func (h *wsUserEchoHandler) OnUserData(ctx *WsCtx) []byte {

@@ -137,9 +137,17 @@ func (w *TLSHandshakeWorker) handleConn(c *connection.ATLSConn) {
 	atomic.AddInt32(&w.pending, -1)
 	wrapper.Timing("connaxis.tls.handshake.latency", time.Since(begin))
 	wrapper.Increment("connaxis.tls.handshake.success")
+	wrapper.Increment(tlsHandshakeStateMetric(c.ConnectionState().DidResume))
 	if err := loop.AddClient(c); err != nil {
 		_ = c.Close()
 	}
+}
+
+func tlsHandshakeStateMetric(didResume bool) string {
+	if didResume {
+		return "connaxis.tls.handshake.resumed"
+	}
+	return "connaxis.tls.handshake.full"
 }
 
 func tlsHandshakeErrorReason(err error) string {
