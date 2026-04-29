@@ -210,6 +210,9 @@ func (s *Server) stat(print bool) {
 				if s.dmng != nil {
 					s.dmng.Stat(nowSec, print)
 				}
+				if s.handler != nil {
+					s.handler.Stat(print)
+				}
 				total := int32(0)
 				for _, v := range s.loops {
 					v.Stat(nowSec, print)

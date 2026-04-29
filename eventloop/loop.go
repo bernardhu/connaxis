@@ -32,6 +32,7 @@ type IHandler interface {
 	OnReady(s IServer)
 	OnClosed(c connection.AppConn, err error)
 	OnConnected(c connection.ProtoConn)
+	Stat(bool)
 }
 
 type IDGenerator interface {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bernardhu/connaxis/connection"
 	"github.com/bernardhu/connaxis/eventloop"
@@ -30,6 +31,15 @@ func (f *fakeLoop) SetIDGen(_ eventloop.IDGenerator)                         {}
 func (f *fakeLoop) Stop()                                                    {}
 func (f *fakeLoop) Stat(_ int64, _ bool)                                     {}
 func (f *fakeLoop) Id() int                                                  { return f.id }
+
+type statCountingHandler struct {
+	statC chan bool
+}
+
+func (h *statCountingHandler) OnReady(eventloop.IServer)          {}
+func (h *statCountingHandler) OnClosed(connection.AppConn, error) {}
+func (h *statCountingHandler) OnConnected(connection.ProtoConn)   {}
+func (h *statCountingHandler) Stat(print bool)                    { h.statC <- print }
 
 func TestSelectLoopRoundRobin(t *testing.T) {
 	s := &Server{}
@@ -66,5 +76,24 @@ func TestLoadInvalidConfig(t *testing.T) {
 
 	if _, err := load(path); err == nil {
 		t.Fatalf("expected error for invalid json")
+	}
+}
+
+func TestServerStatCallsHandlerStat(t *testing.T) {
+	h := &statCountingHandler{statC: make(chan bool, 1)}
+	s := &Server{
+		handler: h,
+		done:    make(chan struct{}),
+	}
+	s.stat(false)
+	defer close(s.done)
+
+	select {
+	case print := <-h.statC:
+		if print {
+			t.Fatalf("unexpected print flag")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("handler Stat was not called")
 	}
 }
