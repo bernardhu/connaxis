@@ -66,7 +66,8 @@ type EvConfig struct {
 	TlsMaxVersion             uint16                  `json:"tlsMaxVersion"`
 	TlsNextProtos             []string                `json:"tlsNextProtos"`
 	TlsSessionTicketsDisabled bool                    `json:"tlsSessionTicketsDisabled"`
-	TlsSessionTicketKeyFile   string                  `json:"tlsSessionTicketKeyFile"`
+	TlsSessionTicketSeed      string                  `json:"tlsSessionTicketSeed"`
+	TlsSessionTicketContext   string                  `json:"tlsSessionTicketContext"`
 	ListenAddrs               []eventloop.IEVEndpoint `json:"listenAddrs"`
 	PollWait                  int                     `json:"pollWait"`
 	TwInterval                int                     `json:"twInterval"`

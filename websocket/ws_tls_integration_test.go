@@ -271,34 +271,39 @@ func TestConnaxisTLSSessionResumptionAcrossReusePortListeners(t *testing.T) {
 	}
 }
 
-func TestConnaxisTLSSessionResumptionWithSharedTicketKey(t *testing.T) {
+func TestConnaxisTLSSessionResumptionAcrossIndependentServersWithSharedSeed(t *testing.T) {
 	requireTCPListen(t)
 	certPath, keyPath := writeSelfSignedCertFiles(t)
-	ticketKeyPath := t.TempDir() + "/ticket.keys"
-	if err := os.WriteFile(ticketKeyPath, []byte("0123456789abcdef0123456789abcdef\n"), 0600); err != nil {
-		t.Fatalf("write ticket key: %v", err)
-	}
 
-	start := func(addr string) *connaxis.Server {
+	newTLSConfig := func(addr string) *connaxis.EvConfig {
 		cfg := connaxis.GetDefaultConfig()
 		cfg.Ncpu = 1
 		cfg.SslMode = "tls"
 		cfg.SslPem = certPath
 		cfg.SslKey = keyPath
-		cfg.TlsSessionTicketKeyFile = ticketKeyPath
+		cfg.TlsMinVersion = tls.VersionTLS12
+		cfg.TlsMaxVersion = tls.VersionTLS12
+		cfg.TlsSessionTicketSeed = "cluster-shared-ticket-seed"
+		cfg.TlsSessionTicketContext = "ws-tls-integration"
 		cfg.ListenAddrs = []eventloop.IEVEndpoint{
 			&connaxis.EVEndpoint{Net: "tcp", Address: addr},
 		}
-		h := &tlsEchoHandler{
-			connected: make(chan struct{}, 4),
-			gotData:   make(chan []byte, 4),
-		}
-		err, srv := connaxis.ServeByConfig(h, cfg, false)
-		if err != nil {
-			t.Fatalf("serve: %v", err)
-		}
-		return srv
+		return cfg
 	}
+
+	h1 := &tlsEchoHandler{connected: make(chan struct{}, 8), gotData: make(chan []byte, 8)}
+	err, srv1 := connaxis.ServeByConfig(h1, newTLSConfig(reserveTCPListenAddr(t)), false)
+	if err != nil {
+		t.Fatalf("serve server1: %v", err)
+	}
+	defer srv1.Stop()
+
+	h2 := &tlsEchoHandler{connected: make(chan struct{}, 8), gotData: make(chan []byte, 8)}
+	err, srv2 := connaxis.ServeByConfig(h2, newTLSConfig(reserveTCPListenAddr(t)), false)
+	if err != nil {
+		t.Fatalf("serve server2: %v", err)
+	}
+	defer srv2.Stop()
 
 	clientCfg := &tls.Config{
 		InsecureSkipVerify: true,
@@ -308,27 +313,23 @@ func TestConnaxisTLSSessionResumptionWithSharedTicketKey(t *testing.T) {
 		ClientSessionCache: tls.NewLRUClientSessionCache(16),
 	}
 
-	first := start(reserveTCPListenAddr(t))
-	conn, err := tls.Dial("tcp", first.GetListenAddrs()[0].String(), clientCfg)
+	conn, err := tls.Dial("tcp", srv1.GetListenAddrs()[0].String(), clientCfg)
 	if err != nil {
-		t.Fatalf("first dial: %v", err)
+		t.Fatalf("dial server1: %v", err)
 	}
 	if conn.ConnectionState().DidResume {
-		t.Fatal("first dial unexpectedly resumed")
+		_ = conn.Close()
+		t.Fatalf("first dial unexpectedly resumed")
 	}
 	_ = conn.Close()
-	first.Stop()
 
-	second := start(reserveTCPListenAddr(t))
-	defer second.Stop()
-	conn, err = tls.Dial("tcp", second.GetListenAddrs()[0].String(), clientCfg)
+	conn, err = tls.Dial("tcp", srv2.GetListenAddrs()[0].String(), clientCfg)
 	if err != nil {
-		t.Fatalf("second dial: %v", err)
+		t.Fatalf("dial server2: %v", err)
 	}
-	didResume := conn.ConnectionState().DidResume
-	_ = conn.Close()
-	if !didResume {
-		t.Fatal("second dial did not resume with shared ticket key")
+	defer conn.Close()
+	if !conn.ConnectionState().DidResume {
+		t.Fatalf("second dial did not resume TLS session across independent servers")
 	}
 }
 
